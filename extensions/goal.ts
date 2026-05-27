@@ -75,6 +75,18 @@ import {
 	writeActiveGoalFile,
 } from "./storage/goal-files.ts";
 import {
+	createSession,
+	CURRENT_SESSION_FILE,
+	deleteSessionFile,
+	readAllSessions,
+	readCurrentSessionId,
+	readSessionFile,
+	renameSession,
+	writeCurrentSessionId,
+	SESSIONS_DIR,
+	type GoalSession,
+} from "./storage/goal-sessions.ts";
+import {
 	buildGoalListText,
 	buildUnfocusedOpenGoalsSummary,
 	focusedGoalFromPool,
@@ -111,6 +123,10 @@ import {
 	validateResumeGoal,
 } from "./goal-policy.ts";
 
+// Session state - tracks the current goal session
+let currentSessionId: string | null = null;
+
+const SESSION_ENTRY = "pi-goal-session";
 const STATE_ENTRY = "pi-goal-state";
 const FOCUS_ENTRY = "pi-goal-focus";
 const GOAL_EVENT_ENTRY = "pi-goal-event";
@@ -585,6 +601,16 @@ export default function goalExtension(pi: ExtensionAPI): void {
 		pi.appendEntry(FOCUS_ENTRY, goalFocusDetails(goalId, reason));
 	}
 
+	function appendSessionEntry(sessionId: string | null): void {
+		pi.appendEntry(SESSION_ENTRY, { version: 1, sessionId });
+	}
+
+	function persistSession(ctx: ExtensionContext): void {
+		const sessionCtx = { cwd: ctx.cwd };
+		writeCurrentSessionId(sessionCtx, currentSessionId);
+		appendSessionEntry(currentSessionId);
+	}
+
 	function setFocusedGoalId(goalId: string | null, ctx: ExtensionContext, reason: GoalFocusReason): void {
 		const previousGoalId = focusedGoalId;
 		focusedGoalId = goalId && goalsById.has(goalId) ? goalId : null;
@@ -819,9 +845,16 @@ export default function goalExtension(pi: ExtensionAPI): void {
 	function loadState(ctx: ExtensionContext): void {
 		goalsById = readActiveGoalPool(ctx);
 		focusedGoalId = null;
+
+		// Load session from disk
+		const sessionCtx = { cwd: ctx.cwd };
+		currentSessionId = readCurrentSessionId(sessionCtx);
+
 		let focusEntry: GoalFocusEntry | null = null;
 		let legacyGoal: GoalRecord | null = null;
 		let legacyStateSeen = false;
+
+		// Check session entry in branch for override
 		const entries = ctx.sessionManager.getBranch();
 		for (let i = entries.length - 1; i >= 0; i--) {
 			const entry = entries[i] as { type?: string; customType?: string; data?: unknown };
@@ -833,22 +866,33 @@ export default function goalExtension(pi: ExtensionAPI): void {
 				legacyGoal = normalizeGoalRecord(asRecord(entry.data)?.goal);
 				legacyStateSeen = true;
 			}
+			// Also load session override from branch
+			if (entry.customType === SESSION_ENTRY && typeof entry.data === "object" && entry.data !== null) {
+				const sessionData = entry.data as Record<string, unknown>;
+				if (typeof sessionData.sessionId === "string" && sessionData.sessionId.trim()) {
+					currentSessionId = sessionData.sessionId.trim();
+				}
+			}
 			if (focusEntry && legacyStateSeen) break;
 		}
+
 		if (legacyGoal && legacyGoal.status !== "complete") {
 			legacyGoal = sanitizeGoalPaths(ctx, mergeGoalPromptFromDisk(ctx, legacyGoal));
 		}
+
 		focusedGoalId = resolveSessionFocus({ pool: goalsById, focusEntry, legacyGoal });
 		if (!focusEntry && focusedGoalId) {
 			try {
 				appendFocusEntry(focusedGoalId, legacyGoal?.id === focusedGoalId ? "migrated" : "selected");
 			} catch {}
 		}
+
 		for (const [id, current] of goalsById) {
 			if (current.status === "complete") {
 				goalsById.delete(id);
 			}
 		}
+
 		clearStoppedRuntimeState();
 		runningGoalId = null;
 		syncGoalTools();
@@ -1340,8 +1384,93 @@ export default function goalExtension(pi: ExtensionAPI): void {
 			ctx.ui.notify(`Goal settings require UI. Auditor config file: ${goalAuditorConfigPath(ctx.cwd)}`, "warning");
 			return;
 		}
-		const selected = await ctx.ui.select("Goal settings", ["auditor"]);
-		if (selected === "auditor") await handleGoalAuditorSettings(ctx);
+		const selected = await ctx.ui.select("Goal settings", ["sessions", "auditor"]);
+		if (selected === "auditor") {
+			await handleGoalAuditorSettings(ctx);
+		} else if (selected === "sessions") {
+			await handleSessionSettings(ctx);
+		}
+	}
+
+	async function handleSessionSettings(ctx: ExtensionContext): Promise<void> {
+		const sessionCtx = { cwd: ctx.cwd };
+
+		while (true) {
+			const sessions = readAllSessions(sessionCtx);
+			const currentId = currentSessionId;
+			const current = currentId ? readSessionFile(sessionCtx, currentId) : null;
+
+			// Build session list options with indicators
+			const options = sessions.map((s) => {
+				const marker = s.id === currentId ? " [current]" : "";
+				const goalCount = goalsById.size;
+				const marker2 = goalCount > 0 && s.id === currentId ? ` (${goalCount} goal(s))` : "";
+				return `${s.name}${marker}${marker2}`;
+			});
+			options.push("Create new session");
+			options.push("Delete session");
+
+			const selection = await ctx.ui.select("Session management", options);
+			if (!selection) return;
+
+			if (selection === "Create new session") {
+				const name = await ctx.ui.input("New session name", "Enter a name for the new session");
+				if (!name) {
+					ctx.ui.notify("Session name required.", "warning");
+					continue;
+				}
+				const newSession = createSession(sessionCtx, name);
+				currentSessionId = newSession.id;
+				persistSession(ctx);
+				ctx.ui.notify(`Created session: ${newSession.name}`, "info");
+				continue;
+			}
+
+			if (selection === "Delete session") {
+				if (sessions.length === 0) {
+					ctx.ui.notify("No sessions to delete.", "info");
+					continue;
+				}
+				const deleteOptions = sessions.map((s) => s.name);
+				const toDelete = await ctx.ui.select("Delete which session?", deleteOptions);
+				if (!toDelete) continue;
+				const sessionToDelete = sessions.find((s) => s.name === toDelete);
+				if (!sessionToDelete) continue;
+				const confirm = await ctx.ui.confirm("Delete session?", `Delete "${sessionToDelete.name}"? This cannot be undone.`);
+				if (!confirm) continue;
+				deleteSessionFile(sessionCtx, sessionToDelete.id);
+				if (currentSessionId === sessionToDelete.id) {
+					currentSessionId = null;
+					writeCurrentSessionId(sessionCtx, null);
+				}
+				ctx.ui.notify(`Deleted session: ${sessionToDelete.name}`, "info");
+				continue;
+			}
+
+			// Switch to selected session
+			const selectedSession = sessions.find((s) => selection.startsWith(s.name));
+			if (!selectedSession) continue;
+
+			const isCurrent = selectedSession.id === currentSessionId;
+			if (isCurrent) {
+				ctx.ui.notify(`Already on session: ${selectedSession.name}`, "info");
+				continue;
+			}
+
+			currentSessionId = selectedSession.id;
+			persistSession(ctx);
+
+			// Reload goals for the new session context
+			// Session switching clears current goal focus (user picks what to do next)
+			goalsById = readActiveGoalPool(ctx);
+			focusedGoalId = null;
+			clearStoppedRuntimeState();
+			runningGoalId = null;
+			syncGoalTools();
+			updateUI(ctx);
+
+			ctx.ui.notify(`Switched to session: ${selectedSession.name}`, "info");
+		}
 	}
 
 	async function handleGoalClear(ctx: ExtensionContext): Promise<void> {
@@ -1426,9 +1555,16 @@ export default function goalExtension(pi: ExtensionAPI): void {
 		},
 	});
 	pi.registerCommand("goal-settings", {
-		description: "Open pi-goal settings, including auditor provider/model/thinking_level.",
+		description: "Open pi-goal settings, including session management and auditor configuration.",
 		handler: async (_rawArgs, ctx) => {
 			await handleGoalSettings(ctx);
+		},
+	});
+
+	pi.registerCommand("session-settings", {
+		description: "Open session management settings to create, switch, or delete goal sessions.",
+		handler: async (_rawArgs, ctx) => {
+			await handleSessionSettings(ctx);
 		},
 	});
 
@@ -2485,19 +2621,32 @@ export default function goalExtension(pi: ExtensionAPI): void {
 	pi.on("session_start", async (event, ctx) => {
 		loadState(ctx);
 		syncTerminalInputPause(ctx);
-		if (event.reason === "resume" && !state.goal && openGoals().length > 1 && ctx.hasUI) {
-			await focusGoalCommand(ctx);
-		}
-		// Codex behavior: prompt before reactivating a paused goal on resume.
-		if (event.reason === "resume" && state.goal?.status === "paused" && ctx.hasUI) {
-			const current = state.goal;
-			const shouldResume = await ctx.ui.confirm("Resume paused goal?", `Goal: ${current.objective}`);
-			if (shouldResume) {
-				setGoal({ ...current, status: "active", autoContinue: true, stopReason: undefined, pauseReason: undefined, pauseSuggestedAction: undefined }, ctx);
+
+		// Session-aware resume behavior:
+		// - On fresh start (not resuming): new sessions start fresh (no auto-resume)
+		// - On crash recovery (resume=true): detect if a goal was interrupted and offer to resume
+		if (event.reason === "resume") {
+			// Crash recovery: offer to resume if a goal was interrupted
+			if (state.goal?.status === "paused") {
+				const current = state.goal;
+				if (ctx.hasUI) {
+					const shouldResume = await ctx.ui.confirm("Resume paused goal?", `Goal: ${current.objective}`);
+					if (shouldResume) {
+						setGoal({ ...current, status: "active", autoContinue: true, stopReason: undefined, pauseReason: undefined, pauseSuggestedAction: undefined }, ctx);
+					}
+				}
 			}
+		} else {
+			// Fresh start: new sessions start with no goal focused
+			// The user can pick or create a goal via /goals, /sisyphus, /goal-focus
+			// Don't auto-resume on fresh session start
 		}
+
 		beginAccounting();
-		queueContinuation(ctx, true);
+		// Don't auto-queue continuation on fresh start; user must explicitly start
+		if (event.reason === "resume") {
+			queueContinuation(ctx, true);
+		}
 	});
 
 	pi.on("session_before_compact", async (_event, ctx) => {
