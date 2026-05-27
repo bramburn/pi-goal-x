@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This directory contains the pi-goal extension source code. The extension provides a goal-oriented coding agent workflow with confirmation drafting, lifecycle management, and completion auditing.
+This directory contains the pi-goal extension source code. The extension provides a goal-oriented coding agent workflow with confirmation drafting, lifecycle management, session window support, and completion auditing.
 
 ## File Structure
 
@@ -22,7 +22,8 @@ extensions/
 ├── prompts/             # Prompt builders
 │   └── goal-prompts.ts
 ├── storage/             # File I/O
-│   └── goal-files.ts
+│   ├── goal-files.ts    # Goal file persistence
+│   └── goal-sessions.ts # Session management
 └── widgets/             # UI components
     ├── goal-widget.ts
     └── goal-notifications.ts
@@ -89,6 +90,9 @@ drafting → active → paused → completed → archived
 - Focus is stored in session entries, not goal files
 - Focus is human-owned: the agent cannot switch focus autonomously
 - Multiple open goals can exist; user chooses which to focus
+- Session windows allow multiple goal sessions per workspace via `/session-settings`
+- Sessions stored in `.pi/sessions/` as JSON files with current session tracked in `current_session`
+- New sessions start fresh (no auto-resume); crash recovery offers to resume paused goals
 
 ### Sisyphus Mode
 

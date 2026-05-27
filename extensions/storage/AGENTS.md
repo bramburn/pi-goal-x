@@ -2,13 +2,65 @@
 
 ## Purpose
 
-This directory contains file I/O operations for the pi-goal extension. It handles all disk interactions for goals: reading, writing, archiving, and path safety validation.
+This directory contains file I/O operations for the pi-goal extension. It handles all disk interactions for goals and sessions: reading, writing, archiving, and path safety validation.
 
 ## Architecture
 
-### File: `goal-files.ts`
+### Files
 
-Single file containing all storage operations. No sub-modules needed—storage logic is cohesive.
+| File | Purpose |
+|------|--------|
+| `goal-files.ts` | Active/archived goal file I/O, serialization, path safety |
+| `goal-sessions.ts` | Session management (create, switch, delete, persist) |
+
+### goal-files.ts Core Functions
+
+| Function | Purpose |
+|----------|--------|
+| `readActiveGoalPool(ctx)` | Entry point. Returns `Map<goalId, GoalRecord>` from disk |
+| `readActiveGoalFiles(ctx)` | Scans `.pi/goals/`, returns parsed active goal records |
+| `writeActiveGoalFile(ctx, goal)` | Writes goal to disk, sanitizes paths first |
+| `archiveGoalFile(ctx, goal)` | Moves goal to archived directory, cleans up active file |
+| `parseGoalFile(path)` | Parses a single goal file (JSON header + markdown body) |
+| `serializeGoalFile(goal)` | Converts goal record to file content |
+| `mergeGoalPromptFromDisk(ctx, goal)` | Syncs `# Goal Prompt` section edits back into memory |
+
+### goal-sessions.ts Core Functions
+
+| Function | Purpose |
+|----------|--------|
+| `createSession(ctx, name)` | Create a new session with a name |
+| `readSessionFile(ctx, id)` | Read a single session by ID |
+| `deleteSessionFile(ctx, id)` | Delete a session file |
+| `readAllSessions(ctx)` | List all sessions sorted by name |
+| `readCurrentSessionId(ctx)` | Read the current session ID from `current_session` |
+| `writeCurrentSessionId(ctx, id)` | Write the current session ID |
+
+### File Naming
+
+#### Goals
+```
+.pi/goals/active_goal_<timestamp>_<id>.md
+.pi/goals/archived/goal_<timestamp>_<id>.md
+```
+
+#### Sessions
+```
+.pi/sessions/<session-id>.json     # Session metadata
+.pi/sessions/current_session       # Current session ID
+```
+
+
+Session JSON format:
+```json
+{
+  "version": 1,
+  "id": "sess_<timestamp>-<random>",
+  "name": "Session name",
+  "createdAt": "<ISO timestamp>",
+  "updatedAt": "<ISO timestamp>"
+}
+```
 
 ### Core Functions
 

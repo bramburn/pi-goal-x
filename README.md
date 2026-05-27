@@ -127,21 +127,23 @@ If the objective is already final and should start immediately, use:
 /goal-tweak <change>    Draft a revision to the focused active/paused goal
 /goal-pause             Pause the focused active goal
 /goal-resume            Resume a paused goal
-/goal-settings          Configure pi-goal settings, including auditor model settings
+/goal-settings          Configure pi-goal settings, including session management and auditor settings
+/session-settings       Manage goal sessions: create, switch, delete
 /goal-abort             Abort/archive the focused goal or cancel drafting
 /goal-clear             Archive the focused goal or cancel drafting
 ```
 
 Pressing `Esc` or aborting an active run pauses the goal so it does not remain falsely active.
 
-## Multiple open goals and focus
+## Multiple open goals, focus, and sessions
 
-`pi-goal` separates durable goals from session focus:
+`pi-goal` separates durable goals from session focus and supports multiple goal sessions:
 
 - **Goal pool**: every open goal is an `active_goal_*.md` file under `.pi/goals/`.
 - **Focused goal**: the current pi session has one focused goal id stored in a `pi-goal-focus` custom session entry.
 - **No focus in markdown**: goal files describe the goal itself; they do not record which session is focused on them.
 - **Branch-local focus**: because focus is reconstructed from the current session branch, `/tree` navigation can restore a different focus for a different branch.
+- **Session windows**: multiple goal sessions can coexist in the same workspace via `.pi/sessions/`. Each session tracks its own current session ID and can switch between sessions using `/session-settings`. New sessions start fresh with no goal focused; crash recovery offers to resume interrupted paused goals.
 - **One continuation chain**: auto-continue only schedules work for the focused goal in the current session.
 
 Creating a goal with `/goals`, `/sisyphus`, `/goals-set`, or `/sisyphus-set` no longer clears other open goals. It creates a new active goal file and focuses it. Use `/goal-list` to inspect open goals and `/goal-focus` to switch the session focus. If the latest focus entry explicitly clears focus, or points at a missing/stale goal, a remaining single open goal is not auto-focused; single-open auto-focus only happens when no focus entry exists at all. If multiple open goals exist and the session has no valid focus, `/goal-resume`, `/goal-clear`, `/goal-abort`, `/goal-pause`, and `/goal-tweak` ask the user to choose a goal instead of acting on all of them.
@@ -237,6 +239,8 @@ The shipped gates are intentionally small and mechanical.
 ```text
 .pi/goals/active_goal_<timestamp>_<id>.md
 .pi/goals/archived/goal_<timestamp>_<id>.md
+.pi/sessions/<session-id>.json     # Session metadata
+.pi/sessions/current_session       # Current session ID
 ```
 
 Multiple `active_goal_*.md` files may exist simultaneously. This is the project-level open goal pool. The selected/focused goal is intentionally not stored in these files; focus lives in session custom state.
@@ -292,6 +296,7 @@ extensions/goal-questionnaire.ts   built-in question UI and question tool regist
 extensions/goal-tool-names.ts      centralized published tool names and allowlists
 extensions/prompts/goal-prompts.ts active, continuation, tweak, and stale prompts
 extensions/storage/goal-files.ts   goal file paths, serialization, parsing, archive IO
+extensions/storage/goal-sessions.ts session storage, session management
 extensions/widgets/goal-widget.ts  above-editor goal beacon component
 extensions/widgets/goal-notifications.ts widget-style notification text
 ```

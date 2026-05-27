@@ -26,6 +26,7 @@ tests/
 | `goal-tool-names.test.ts` | `goal-tool-names.ts` | Tool constants, visibility lists |
 | `goal-prompts.test.ts` | `prompts/goal-prompts.ts` | Prompt builders, content |
 | `goal-files.test.ts` | `storage/goal-files.ts` | Storage I/O, path safety |
+| `goal-sessions.test.ts` | `storage/goal-sessions.ts` | Session create, read, delete, list, persist |
 | `goal-widget.test.ts` | `widgets/goal-widget.ts` | Widget rendering, display states |
 | `goal-notifications.test.ts` | `widgets/goal-notifications.ts` | Notification text |
 | `goal-ledger.test.ts` | `goal-ledger.ts` | Event ledger, parsing |

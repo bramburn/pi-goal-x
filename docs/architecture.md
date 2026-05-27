@@ -103,6 +103,47 @@ Because this is stored with `pi.appendEntry("pi-goal-focus", ...)`, it is sessio
 
 Focus is human-owned. No agent tool can switch focus. Lifecycle tools operate only on the focused goal.
 
+## Session windows
+
+Multiple goal sessions can coexist in the same workspace. This allows users to run separate pi agent instances without interfering with each other's goals—useful for monorepos or multi-project setups.
+
+Sessions are stored in `.pi/sessions/`:
+
+```text
+.pi/sessions/<session-id>.json     # Session metadata JSON
+.pi/sessions/current_session       # Current session ID (plain text)
+```
+
+Session JSON schema (version 1):
+```json
+{
+  "version": 1,
+  "id": "sess_<timestamp>-<random>",
+  "name": "Session name",
+  "createdAt": "<ISO timestamp>",
+  "updatedAt": "<ISO timestamp>"
+}
+```
+
+Session commands:
+- `/session-settings` — open the session management UI directly
+- `/goal-settings` → "sessions" — also opens session management
+
+The session management UI allows:
+- **List sessions**: view all sessions with `[current]` marker and goal count
+- **Create new session**: enter a name to create a fresh session
+- **Switch session**: switch to another session (clears goal focus, user picks new goal)
+- **Delete session**: remove a session with confirmation
+
+
+Startup behavior:
+- **Fresh start** (`session_start` reason != "resume"): new sessions start with no goal focused. Auto-continue is NOT queued. User must explicitly pick or create a goal via `/goals`, `/sisyphus`, `/goals-set`, or `/goal-focus`.
+- **Crash recovery** (`session_start` reason == "resume"): if the goal is paused, pi offers to resume it. Auto-continue is queued after confirmation.
+
+
+Switching sessions via `/session-settings` clears the current goal focus so the user can pick a new goal for that session. Goals persist on disk and are not affected by session switching.
+
+
 ## Goal styles
 
 ### Regular goal
@@ -138,6 +179,8 @@ A deprecated optional `draftId` parameter is accepted for compatibility but igno
 - `/goal-list` prints all open goals with id, status, mode, usage, objective title, path, and a focus marker.
 - `/goal-focus` uses `ctx.ui.select` when multiple goals are open and updates only session focus.
 - `/goal-status` and `/goal` show the focused goal plus an `other open goals` hint.
+- `/goal-settings` opens settings including session management and auditor configuration.
+- `/session-settings` or `/goal-settings` → sessions opens the session management UI.
 - `/goal-resume` resumes the focused paused goal; when unfocused with multiple open goals, it asks the user to choose. Choosing an already active goal only focuses it.
 - `/goal-clear` and `/goal-abort` archive only the focused/selected goal and never clear the whole pool at once.
 - During goal confirmation, `/goal-clear` and `/goal-abort` only cancel the confirmation flow; they do not archive an unrelated focused goal unless the user invokes a lifecycle command after confirmation is cancelled.
@@ -165,16 +208,18 @@ The `tool_call` interceptor blocks:
 
 ## Disk format
 
-Active and archived goal files live under `.pi/goals/`. Multiple active files may exist simultaneously.
+Active and archived goal files live under `.pi/goals/`. Multiple active files may exist simultaneously. Session files live under `.pi/sessions/`.
 
 ```text
 .pi/goals/active_goal_<timestamp>_<id>.md
 .pi/goals/archived/goal_<timestamp>_<id>.md
+.pi/sessions/<session-id>.json     # Session metadata
+.pi/sessions/current_session       # Current session ID
 ```
 
 Each file has extension-owned metadata and a user-editable `# Goal Prompt` section. Before focused commands, tools, and lifecycle hooks act, the runtime re-reads the focused active file and reconciles lifecycle state from disk. External pause/archive/delete/status changes therefore win over stale memory and deleted active files are not resurrected. Prompt-body edits are still picked up from `# Goal Prompt`; session focus is never written to these files.
 
-Path safety checks reject absolute paths, traversal, NUL bytes, symlinks, and paths outside the goal directories.
+Path safety checks reject absolute paths, traversal, NUL bytes, symlinks, and paths outside the goal and session directories.
 
 ## Auto-continue and stop conditions
 

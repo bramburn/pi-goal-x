@@ -23,6 +23,7 @@ The **authoritative reference** for how the extension is implemented:
 - Runtime shape and state
 - Module responsibilities
 - Lifecycle flow
+- Session window support
 - Disk format
 - Completion audit
 - Testing approach
