@@ -55,6 +55,12 @@ export function goalLedgerPath(ctx: GoalLedgerContext): string {
   return path.resolve(ctx.cwd, normalizeRelPath(GOAL_LEDGER_FILE));
 }
 
+/**
+ * Appends a single JSONL line to the goal event ledger.
+ * Uses a pid+timestamp temp file with exclusive creation (flag "wx") to avoid
+ * race conditions in concurrent writes. Falls back to direct append on temp failure.
+ * Ledger failures are silent — callers should not crash on append failure.
+ */
 export function appendGoalEvent(ctx: GoalLedgerContext, event: GoalLedgerEvent): void {
   const filePath = goalLedgerPath(ctx);
   const dir = path.dirname(filePath);

@@ -731,6 +731,10 @@ export default function goalExtension(pi: ExtensionAPI): void {
 				syncGoalPromptFromDisk(ctx);
 				const next = state.goal;
 				if (next) state.goal = next.status === "complete" ? archiveGoalFile(ctx, next) : writeActiveGoalFile(ctx, next);
+				// NOTE: During update_goal completion, state.goal is set to writeActiveGoalFile()
+				// directly (bypassing persist) to defer archival to the next persist() call.
+				// This gives the agent's final turn a chance to see the completion report
+				// before the goal file is moved to the archive.
 			}
 		}
 		pi.appendEntry(STATE_ENTRY, goalDetails(state.goal));

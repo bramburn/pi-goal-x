@@ -124,6 +124,14 @@ export function abortGoalCommandMessage(args: { archived: boolean; wasDrafting: 
 	return args.archived ? "Goal aborted and archived." : args.wasDrafting ? "Drafting cancelled." : "No goal is set.";
 }
 
+/**
+ * Builds the completion report shown to the user after a goal is marked complete.
+ * Three variants:
+ *   1. Auditor approved → shows auditor approval report
+ *   2. Audit skipped (disabled / Esc) → shows skip reason
+ *   3. No auditor involvement → plain "Goal complete."
+ * The completionSummary is appended after the audit section; detailedSummary is always last.
+ */
 export function buildCompletionReport(args: { detailedSummary: string; completionSummary?: string | null; auditorReport?: string | null; auditSkippedReason?: string | null }): string {
 	const auditSkipped = args.auditSkippedReason?.trim();
 	const auditorReport = args.auditorReport?.trim();
