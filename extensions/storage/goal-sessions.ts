@@ -52,6 +52,8 @@ export function serializeSession(session: GoalSession): string {
 
 export function parseSession(filePath: string): GoalSession | null {
 	try {
+		// Reject symlinks to prevent session hijacking (e.g. a malicious symlink
+		// pointing to /etc/passwd or another user's session file).
 		if (fs.lstatSync(filePath).isSymbolicLink()) return null;
 		const content = fs.readFileSync(filePath, "utf8");
 		const raw = JSON.parse(content) as Record<string, unknown>;

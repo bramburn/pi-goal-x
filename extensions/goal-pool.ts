@@ -34,6 +34,17 @@ export function otherOpenGoalCount(pool: Map<string, GoalRecord>, focusedGoalId:
 	return openGoalsFromPool(pool).filter((goal) => goal.id !== focusedGoalId).length;
 }
 
+/**
+ * Resolves which goal this session should focus on, in priority order:
+ *   1. Valid focusEntry from the current session branch → that goal (if not complete)
+ *   2. No valid focusEntry → null (session has no prior focus)
+ *   3. Legacy in-memory goal from pre-session-window era → migrate it
+ *   4. Exactly one open goal in the pool → auto-focus it
+ *   5. Multiple or no open goals → null (user must choose via /goal-focus)
+ *
+ * This is the session window resolution engine: multiple goal sessions can coexist
+ * and this function determines which one this session cares about.
+ */
 export function resolveSessionFocus(args: {
 	pool: Map<string, GoalRecord>;
 	focusEntry?: GoalFocusEntry | null;
